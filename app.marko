@@ -1,13 +1,24 @@
+static const rgb = [255,0,0]
+class {
+  constructor() {
+    this.state = {color: rgb}
+  }
+  updateColor() {
+    this.state.color = rgb.map(() => Math.floor(Math.random()*255))
+  }
+  setColor() {
+    return 'rgb(' + this.state.color.join(',') + ')'
+  }
 
+}
 style {
   .colorbox {
     width:150px;
     height:150px;
-    background-color:green;
   }
 }
 
 <h1> Amazing Fantastic Marko Random RGB! </h1>
-<div.colorbox></div>
+<div.colorbox style={backgroundColor: component.setColor()}></div>
 <h3>rgb(tbd!)</h3>
-<button>Change Color!</button>
+<button on-click('updateColor')>Change Color!</button>

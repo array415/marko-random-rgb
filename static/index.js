@@ -4854,204 +4854,400 @@ require('/marko$4.0.1/runtime/createOut'/*'../createOut'*/).$__setCreateOut(crea
 });
 $_mod.def("/marko$4.0.1/vdom", function(require, exports, module, __filename, __dirname) { module.exports = require('/marko$4.0.1/runtime/vdom/index'/*'./runtime/vdom'*/);
 });
-$_mod.def("/marko$4.0.1/runtime/helpers", function(require, exports, module, __filename, __dirname) { 'use strict';
-var isArray = Array.isArray;
+$_mod.main("/marko$4.0.1/components", "");
+$_mod.remap("/marko$4.0.1/components/index", "/marko$4.0.1/components/index-browser");
+$_mod.def("/marko$4.0.1/components/ComponentsContext", function(require, exports, module, __filename, __dirname) { 'use strict';
 
-function isFunction(arg) {
-    return typeof arg === 'function';
+var ComponentDef = require('/marko$4.0.1/components/ComponentDef'/*'./ComponentDef'*/);
+var initComponents = require('/marko$4.0.1/components/init-components-browser'/*'./init-components'*/);
+var EMPTY_OBJECT = {};
+
+function ComponentsContext(out, root) {
+    if (!root) {
+        root = new ComponentDef(null, null, out);
+    }
+
+    this.$__out = out;
+    this.$__componentStack = [root];
+    this.$__preserved = EMPTY_OBJECT;
+    this.$__componentsById = {};
 }
 
-function classList(arg, classNames) {
-    var len;
+ComponentsContext.prototype = {
+    get $__components() {
+        return this.$__componentStack[0].$__children;
+    },
 
-    if (arg) {
-        if (typeof arg === 'string') {
-            if (arg) {
-                classNames.push(arg);
+    $__beginComponent: function(component) {
+        var self = this;
+        var componentStack = self.$__componentStack;
+        var origLength = componentStack.length;
+        var parent = componentStack[origLength - 1];
+
+        var componentId = component.id;
+
+        if (!componentId) {
+            componentId = component.id = parent.$__nextId();
+        }
+
+        var componentDef = new ComponentDef(component, componentId, this.$__out, componentStack, origLength);
+        this.$__componentsById[componentId] = componentDef;
+        parent.$__addChild(componentDef);
+        componentStack.push(componentDef);
+
+        return componentDef;
+    },
+    $__clearComponents: function () {
+        this.$__componentStack = [new ComponentDef(null /* id */, this.$__out)];
+    },
+    $__initComponents: function (doc) {
+        var componentDefs = this.$__components;
+        if (componentDefs) {
+            initComponents.$__initClientRendered(componentDefs, doc);
+            this.$__clearComponents();
+        }
+    },
+    $__nextComponentId: function() {
+        var componentStack = this.$__componentStack;
+        var parent = componentStack[componentStack.length - 1];
+        return parent.$__nextId();
+    },
+    $__preserveDOMNode: function(elId, bodyOnly) {
+        var preserved = this.$__preserved ;
+        if (preserved === EMPTY_OBJECT) {
+            preserved = this.$__preserved = {};
+        }
+        preserved[elId] = { $__bodyOnly: bodyOnly };
+    }
+};
+
+ComponentsContext.$__getComponentsContext = function (out) {
+    var global = out.global;
+
+    return out.data.components ||
+        global.components ||
+        (global.components = new ComponentsContext(out));
+};
+
+module.exports = ComponentsContext;
+});
+$_mod.def("/marko$4.0.1/components/renderer", function(require, exports, module, __filename, __dirname) { var componentsUtil = require('/marko$4.0.1/components/util-browser'/*'./util'*/);
+var componentLookup = componentsUtil.$__componentLookup;
+var emitLifecycleEvent = componentsUtil.$__emitLifecycleEvent;
+var nextRepeatedId = require('/marko$4.0.1/components/nextRepeatedId'/*'./nextRepeatedId'*/);
+var repeatedRegExp = /\[\]$/;
+var ComponentsContext = require('/marko$4.0.1/components/ComponentsContext'/*'./ComponentsContext'*/);
+var registry = require('/marko$4.0.1/components/registry-browser'/*'./registry'*/);
+var extend = require('/raptor-util$3.1.0/extend'/*'raptor-util/extend'*/);
+
+var COMPONENT_BEGIN_ASYNC_ADDED_KEY = '$wa';
+
+function resolveComponentKey(out, key, scope) {
+    if (key.charAt(0) == '#') {
+        return key.substring(1);
+    } else {
+        var resolvedId;
+
+        if (repeatedRegExp.test(key)) {
+            resolvedId = nextRepeatedId(out, scope, key);
+        } else {
+            resolvedId = scope + '-' + key;
+        }
+
+        return resolvedId;
+    }
+}
+
+function preserveComponentEls(existingComponent, out, componentsContext) {
+    var rootEls = existingComponent.$__getRootEls({});
+
+    for (var elId in rootEls) {
+        var el = rootEls[elId];
+
+        // We put a placeholder element in the output stream to ensure that the existing
+        // DOM node is matched up correctly when using morphdom.
+        out.element(el.tagName, { id: elId });
+
+        componentsContext.$__preserveDOMNode(elId); // Mark the element as being preserved (for morphdom)
+    }
+
+    existingComponent.$__reset(); // The component is no longer dirty so reset internal flags
+    return true;
+}
+
+function handleBeginAsync(event) {
+    var parentOut = event.parentOut;
+    var asyncOut = event.out;
+    var componentsContext = asyncOut.global.components;
+    var componentStack;
+
+    if (componentsContext && (componentStack = componentsContext.$__componentStack)) {
+        // All of the components in this async block should be
+        // initialized after the components in the parent. Therefore,
+        // we will create a new ComponentsContext for the nested
+        // async block and will create a new component stack where the current
+        // component in the parent block is the only component in the nested
+        // stack (to begin with). This will result in top-level components
+        // of the async block being added as children of the component in the
+        // parent block.
+        var nestedComponentsContext = new ComponentsContext(asyncOut, componentStack[componentStack.length-1]);
+        asyncOut.data.components = nestedComponentsContext;
+    }
+    asyncOut.data.$w = parentOut.data.$w;
+}
+
+
+
+function createRendererFunc(templateRenderFunc, componentProps, renderingLogic) {
+    if (typeof renderingLogic == 'function') {
+        var ctor = renderingLogic;
+        renderingLogic = renderingLogic.prototype;
+        renderingLogic.onCreate = renderingLogic.onCreate || ctor;
+    }
+
+    renderingLogic = renderingLogic || {};
+    var onInput = renderingLogic.onInput;
+    var typeName = componentProps.type;
+    var roots = componentProps.roots;
+    var assignedId = componentProps.id;
+    var split = componentProps.split;
+
+    return function renderer(input, out) {
+        var outGlobal = out.global;
+
+        if (!out.isSync()) {
+            if (!outGlobal[COMPONENT_BEGIN_ASYNC_ADDED_KEY]) {
+                outGlobal[COMPONENT_BEGIN_ASYNC_ADDED_KEY] = true;
+                out.on('beginAsync', handleBeginAsync);
             }
-        } else if (typeof (len = arg.length) === 'number') {
-            for (var i=0; i<len; i++) {
-                classList(arg[i], classNames);
+        }
+
+        var component = outGlobal.$w;
+        var isRerender = component !== undefined;
+        var id = assignedId;
+        var isExisting;
+        var customEvents;
+        var scope;
+
+        if (component) {
+            id = component.id;
+            isExisting = true;
+            outGlobal.$w = null;
+        } else {
+            var componentArgs = input && input.$w || out.data.$w;
+
+            if (componentArgs) {
+                scope = componentArgs[0];
+
+                if (scope) {
+                    scope = scope.id;
+                }
+
+                var key = componentArgs[1];
+                if (key != null) {
+                    key = key.toString();
+                }
+                id = id || resolveComponentKey(out, key, scope);
+                customEvents = componentArgs[2];
+                delete input.$w;
             }
-        } else if (typeof arg === 'object') {
-            for (var name in arg) {
-                if (arg.hasOwnProperty(name)) {
-                    var value = arg[name];
-                    if (value) {
-                        classNames.push(name);
+        }
+
+        var componentsContext = ComponentsContext.$__getComponentsContext(out);
+        id = id || componentsContext.$__nextComponentId();
+
+        if (registry.$__isServer) {
+            component = registry.$__createComponent(
+                renderingLogic,
+                id,
+                input,
+                out,
+                typeName,
+                customEvents,
+                scope);
+            input = component.$__updatedInput;
+            component.$__updatedInput = undefined; // We don't want $__updatedInput to be serialized to the browser
+        } else {
+            if (!component) {
+                if (isRerender) {
+                    // Look in in the DOM to see if a component with the same ID and type already exists.
+                    component = componentLookup[id];
+                    if (component && component.$__type !== typeName) {
+                        component = undefined;
+                    }
+                }
+
+                if (component) {
+                    isExisting = true;
+                } else {
+                    isExisting = false;
+                    // We need to create a new instance of the component
+                    component = registry.$__createComponent(typeName, id);
+
+                    if (split) {
+                        split = false;
+                        extend(component.constructor.prototype, renderingLogic);
+                    }
+                }
+
+                // Set this flag to prevent the component from being queued for update
+                // based on the new input. The component is about to be rerendered
+                // so we don't want to queue it up as a result of calling `setInput()`
+                component.$__updateQueued = true;
+
+                component.$__setCustomEvents(customEvents, scope);
+
+                if (!isExisting) {
+                    emitLifecycleEvent(component, 'create', input, out);
+                }
+
+                input = component.$__setInput(input, onInput, out);
+
+                if (isExisting) {
+                    if (!component.$__isDirty || !component.shouldUpdate(input, component.$__state)) {
+                        preserveComponentEls(component, out, componentsContext);
+                        return;
                     }
                 }
             }
-        }
-    }
-}
 
-function createDeferredRenderer(handler) {
-    function deferredRenderer(input, out) {
-        deferredRenderer.renderer(input, out);
-    }
-
-    // This is the initial function that will do the rendering. We replace
-    // the renderer with the actual renderer func on the first render
-    deferredRenderer.renderer = function(input, out) {
-        var rendererFunc = handler.renderer || handler._ || handler.render;
-        if (!isFunction(rendererFunc)) {
-            throw Error('Invalid renderer');
+            emitLifecycleEvent(component, 'render', out);
         }
-        // Use the actual renderer from now on
-        deferredRenderer.renderer = rendererFunc;
-        rendererFunc(input, out);
+
+        var componentDef = componentsContext.$__beginComponent(component);
+        componentDef.$__roots = roots;
+        componentDef.$__isExisting = isExisting;
+
+        // Render the template associated with the component using the final template
+        // data that we constructed
+        templateRenderFunc(input, out, componentDef, component, component.$__rawState);
+
+        componentDef.$__end();
     };
-
-    return deferredRenderer;
 }
 
-function resolveRenderer(handler) {
-    var renderer = handler.renderer || handler._;
+module.exports = createRendererFunc;
 
-    if (renderer) {
-        return renderer;
-    }
+// exports used by the legacy renderer
+createRendererFunc.$__resolveComponentKey = resolveComponentKey;
+createRendererFunc.$__preserveComponentEls = preserveComponentEls;
+createRendererFunc.$__handleBeginAsync = handleBeginAsync;
 
-    if (isFunction(handler)) {
-        return handler;
-    }
-
-    // If the user code has a circular function then the renderer function
-    // may not be available on the module. Since we can't get a reference
-    // to the actual renderer(input, out) function right now we lazily
-    // try to get access to it later.
-    return createDeferredRenderer(handler);
-}
-
-/**
- * Internal helper method to prevent null/undefined from being written out
- * when writing text that resolves to null/undefined
- * @private
- */
-exports.s = function strHelper(str) {
-    return (str == null) ? '' : str.toString();
-};
-
-/**
- * Internal helper method to handle loops without a status variable
- * @private
- */
-exports.f = function forEachHelper(array, callback) {
-    if (isArray(array)) {
-        for (var i=0; i<array.length; i++) {
-            callback(array[i]);
-        }
-    } else if (isFunction(array)) {
-        // Also allow the first argument to be a custom iterator function
-        array(callback);
-    }
-};
-
-/**
- * Helper to load a custom tag
- */
-exports.t = function loadTagHelper(renderer, targetProperty, isRepeated) {
-    if (renderer) {
-        renderer = resolveRenderer(renderer);
-    }
-
-    return renderer;
-};
-
-/**
- * classList(a, b, c, ...)
- * Joines a list of class names with spaces. Empty class names are omitted.
- *
- * classList('a', undefined, 'b') --> 'a b'
- *
- */
-exports.cl = function classListHelper() {
-    var classNames = [];
-    classList(arguments, classNames);
-    return classNames.join(' ');
-};
 });
-$_mod.def("/marko$4.0.1/runtime/vdom/helpers", function(require, exports, module, __filename, __dirname) { 'use strict';
+$_mod.def("/marko$4.0.1/components/index-browser", function(require, exports, module, __filename, __dirname) { var events = require('/marko$4.0.1/runtime/events'/*'../runtime/events'*/);
+var Component = require('/marko$4.0.1/components/Component'/*'./Component'*/);
+var componentsUtil = require('/marko$4.0.1/components/util-browser'/*'./util'*/);
 
-var vdom = require('/marko$4.0.1/runtime/vdom/vdom'/*'./vdom'*/);
-var VElement = vdom.$__VElement;
-var VText = vdom.$__VText;
+function onInitComponent(listener) {
+    events.on('initComponent', listener);
+}
 
-var commonHelpers = require('/marko$4.0.1/runtime/helpers'/*'../helpers'*/);
-var extend = require('/raptor-util$3.1.0/extend'/*'raptor-util/extend'*/);
+exports.onInitComponent = onInitComponent;
+exports.Component = Component;
+exports.getComponentForEl = componentsUtil.$__getComponentForEl;
+exports.init = require('/marko$4.0.1/components/init-components-browser'/*'./init-components'*/).$__initServerRendered;
 
-var classList = commonHelpers.cl;
+exports.c = require('/marko$4.0.1/components/defineComponent'/*'./defineComponent'*/); // Referenced by compiled templates
+exports.r = require('/marko$4.0.1/components/renderer'/*'./renderer'*/); // Referenced by compiled templates
+exports.rc = require('/marko$4.0.1/components/registry-browser'/*'./registry'*/).$__register;  // Referenced by compiled templates
 
-exports.e = function(tagName, attrs, childCount, constId) {
-    return new VElement(tagName, attrs, childCount, constId);
-};
-
-exports.t = function(value) {
-    return new VText(value);
-};
-
-exports.const = function(id) {
-    var i=0;
-    return function() {
-        return id + (i++);
-    };
-};
+window.$__MARKO_COMPONENTS = exports; // Helpful when debugging... WARNING: DO NOT USE IN REAL CODE!
+});
+$_mod.def("/marko$4.0.1/runtime/vdom/helper-styleAttr", function(require, exports, module, __filename, __dirname) { var dashedNames = {};
 
 /**
- * Internal helper method to handle the "class" attribute. The value can either
- * be a string, an array or an object. For example:
- *
- * ca('foo bar') ==> ' class="foo bar"'
- * ca({foo: true, bar: false, baz: true}) ==> ' class="foo baz"'
- * ca(['foo', 'bar']) ==> ' class="foo bar"'
+ * Helper for generating the string for a style attribute
+ * @param  {[type]} style [description]
+ * @return {[type]}       [description]
  */
-exports.ca = function(classNames) {
-    if (!classNames) {
+module.exports = function(style) {
+    if (!style) {
         return null;
     }
 
-    if (typeof classNames === 'string') {
-        return classNames;
+    if (typeof style === 'string') {
+        return style;
+    } else if (typeof style === 'object') {
+        var styles = '';
+        for (var name in style) {
+            var value = style[name];
+            if (value) {
+                var nameDashed = dashedNames[name];
+                if (!nameDashed) {
+                    nameDashed = dashedNames[name] = name.replace(/([A-Z])/g, '-$1').toLowerCase();
+                }
+                styles += nameDashed + ':' + value + ';';
+            }
+        }
+        return styles || null;
     } else {
-        return classList(classNames);
+        return null;
     }
 };
-
-extend(exports, commonHelpers);
-
 });
 $_mod.def("/marko-random-rgb$1.0.0/app.marko", function(require, exports, module, __filename, __dirname) { // Compiled using marko@4.0.1 - DO NOT EDIT
 "use strict";
 
 var marko_template = module.exports = require('/marko$4.0.1/vdom'/*"marko/vdom"*/).t(),
-    marko_helpers = require('/marko$4.0.1/runtime/vdom/helpers'/*"marko/runtime/vdom/helpers"*/),
-    marko_createElement = marko_helpers.e,
-    marko_const = marko_helpers.const,
-    marko_const_nextId = marko_const("4a05ac"),
-    marko_node0 = marko_createElement("h1", null, 1, marko_const_nextId())
-      .t(" Amazing Fantastic Marko Random RGB! "),
-    marko_node1 = marko_createElement("div", {
-        "class": "colorbox"
-      }, 0, marko_const_nextId()),
-    marko_node2 = marko_createElement("h3", null, 1, marko_const_nextId())
-      .t("rgb(tbd!)"),
-    marko_node3 = marko_createElement("button", null, 1, marko_const_nextId())
-      .t("Change Color!");
+    marko_component = ({
+    onCreate: function () {
+        this.state = { color: rgb };
+    },
+    updateColor: function () {
+        this.state.color = rgb.map(() => Math.floor(Math.random() * 255));
+    },
+    setColor: function () {
+        return 'rgb(' + this.state.color.join(',') + ')';
+    }
+}),
+    marko_components = require('/marko$4.0.1/components/index-browser'/*"marko/components"*/),
+    marko_registerComponent = marko_components.rc,
+    marko_componentType = marko_registerComponent("/marko-random-rgb$1.0.0/app.marko", function() {
+      return module.exports;
+    }),
+    marko_styleAttr = require('/marko$4.0.1/runtime/vdom/helper-styleAttr'/*"marko/runtime/vdom/helper-styleAttr"*/);
 
-function render(input, out) {
+const rgb = [255,0,0];
+
+function render(input, out, __component, component, state) {
   var data = input;
 
-  out.n(marko_node0);
+  out.e("h1", {
+      id: __component.elId("_r0")
+    }, 1)
+    .t(" Amazing Fantastic Marko Random RGB! ");
 
-  out.n(marko_node1);
+  out.e("div", {
+      style: marko_styleAttr({
+          backgroundColor: component.setColor()
+        }),
+      "class": "colorbox",
+      id: __component.elId("_r1")
+    }, 0);
 
-  out.n(marko_node2);
+  out.e("h3", {
+      id: __component.elId("_r2")
+    }, 1)
+    .t("rgb(tbd!)");
 
-  out.n(marko_node3);
+  out.e("button", {
+      id: __component.elId("_r3"),
+      "data-_onclick": __component.d("updateColor")
+    }, 1)
+    .t("Change Color!");
 }
 
-marko_template._ = render;
+marko_template._ = marko_components.r(render, {
+    type: marko_componentType,
+    roots: [
+      "_r0",
+      "_r1",
+      "_r2",
+      "_r3"
+    ]
+  }, marko_component);
+
+marko_template.Component = marko_components.c(marko_component, marko_template._);
 
 });
 $_mod.def("/marko-random-rgb$1.0.0/client", function(require, exports, module, __filename, __dirname) { rgbComponent = require('/marko-random-rgb$1.0.0/app.marko'/*'./app.marko'*/);
