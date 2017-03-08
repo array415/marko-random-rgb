@@ -5227,8 +5227,10 @@ function render(input, out, __component, component, state) {
 
   out.e("h3", {
       id: __component.elId("_r2")
-    }, 1)
-    .t("rgb(tbd!)");
+    }, 3)
+    .t("rgb(")
+    .t(state.color)
+    .t(")");
 
   out.e("button", {
       id: __component.elId("_r3"),
