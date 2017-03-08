@@ -5028,14 +5028,27 @@ var marko_template = module.exports = require('/marko$4.0.1/vdom'/*"marko/vdom"*
     marko_helpers = require('/marko$4.0.1/runtime/vdom/helpers'/*"marko/runtime/vdom/helpers"*/),
     marko_createElement = marko_helpers.e,
     marko_const = marko_helpers.const,
-    marko_const_nextId = marko_const("35a440"),
+    marko_const_nextId = marko_const("4a05ac"),
     marko_node0 = marko_createElement("h1", null, 1, marko_const_nextId())
-      .t("Test");
+      .t(" Amazing Fantastic Marko Random RGB! "),
+    marko_node1 = marko_createElement("div", {
+        "class": "colorbox"
+      }, 0, marko_const_nextId()),
+    marko_node2 = marko_createElement("h3", null, 1, marko_const_nextId())
+      .t("rgb(tbd!)"),
+    marko_node3 = marko_createElement("button", null, 1, marko_const_nextId())
+      .t("Change Color!");
 
 function render(input, out) {
   var data = input;
 
   out.n(marko_node0);
+
+  out.n(marko_node1);
+
+  out.n(marko_node2);
+
+  out.n(marko_node3);
 }
 
 marko_template._ = render;
