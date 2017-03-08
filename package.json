@@ -1,0 +1,22 @@
+{
+  "name": "marko-random-rgb",
+  "version": "1.0.0",
+  "description": "First attempt at a simple marko app",
+  "main": "client.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/array415/marko-random-rgb.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/array415/marko-random-rgb/issues"
+  },
+  "homepage": "https://github.com/array415/marko-random-rgb#readme",
+  "dependencies": {
+    "marko": "^4.0.1"
+  }
+}
